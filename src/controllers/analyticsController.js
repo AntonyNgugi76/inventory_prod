@@ -54,4 +54,57 @@ exports.getDailySalesAnalytics = async (req, res) => {
     res.status(500).json({ message: 'Error fetching daily sales analytics' });
   }
 };
+const Booking = require('../models/Booking');
+const Room = require('../models/Room');
+
+exports.getMonthlySales = async (req, res) => {
+  const { month, year } = req.query;
+
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0, 23, 59, 59);
+
+  const bookings = await Booking.aggregate([
+    {
+      $match: {
+        startTime: { $gte: start, $lte: end },
+        isCompleted: true,
+      }
+    },
+    {
+      $group: {
+        _id: '$roomId',
+        totalRevenue: { $sum: '$price' },
+        count: { $sum: 1 },
+      }
+    },
+    {
+      $lookup: {
+        from: 'rooms',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'room'
+      }
+    },
+    {
+      $unwind: '$room'
+    },
+    {
+      $project: {
+        roomName: '$room.name',
+        totalRevenue: 1,
+        count: 1,
+      }
+    }
+  ]);
+
+  const grandTotal = bookings.reduce((sum, b) => sum + b.totalRevenue, 0);
+
+  res.json({
+    month,
+    year,
+    perRoom: bookings,
+    totalRevenue: grandTotal
+  });
+};
+
 

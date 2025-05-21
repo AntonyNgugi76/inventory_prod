@@ -58,22 +58,35 @@ router.post('/close-shift', protect, async (req, res) => {
   try {
     const staffId = req.user.id;
 
-    // Check if the staff has an open shift
     const openShift = await Shift.findOne({ staff: staffId, endTime: null });
     if (!openShift) {
       return res.status(400).json({ message: 'No active shift to close.' });
     }
 
-    // Set the endTime to close the shift
     openShift.endTime = Date.now();
 
-    // Optionally, capture handover details (e.g., handedOverTo)
-    const { handedOverTo } = req.body;
+    const { handedOverTo, expenses } = req.body;
+
     if (handedOverTo) {
       openShift.handedOverTo = handedOverTo;
     }
 
+    if (Array.isArray(expenses)) {
+      openShift.expenses = openShift.expenses || [];
+
+      expenses.forEach(exp => {
+        if (exp.description && exp.amount != null) {
+          openShift.expenses.push({
+            description: exp.description,
+            amount: exp.amount,
+            addedBy: staffId
+          });
+        }
+      });
+    }
+
     await openShift.save();
+
     res.status(200).json({ message: 'Shift closed successfully.', shift: openShift });
 
   } catch (error) {
@@ -81,6 +94,8 @@ router.post('/close-shift', protect, async (req, res) => {
     res.status(500).json({ error: 'Failed to close shift.' });
   }
 });
+
+
 
 router.get('/check-shift', protect, async (req, res) => {
   try {
@@ -161,6 +176,69 @@ router.get('/sales-per-shift', protect, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch sales per shift', details: err.message });
   }
 });
+router.get('/expenses', protect, async (req, res) => {
+  try {
+    const { filter } = req.query;
+
+    let dateFilter = {};
+
+    const now = new Date();
+
+    if (filter === 'today') {
+      // Start of today (midnight)
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      // Start of tomorrow
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setDate(startOfDay.getDate() + 1);
+
+      dateFilter = {
+        'expenses.timestamp': { $gte: startOfDay, $lt: endOfDay }
+      };
+    } else if (filter === 'month') {
+      // Start of the month
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Start of next month
+      const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      dateFilter = {
+        'expenses.timestamp': { $gte: startOfMonth, $lt: startOfNextMonth }
+      };
+    }
+
+    const shiftsWithExpenses = await Shift.find({
+      'expenses.0': { $exists: true },
+      ...dateFilter
+    })
+      .populate('expenses.addedBy', 'name email')
+      .select('expenses startTime endTime staff');
+
+    // Flatten and filter expenses to ensure match
+    const allExpenses = shiftsWithExpenses.flatMap(shift =>
+      shift.expenses
+        .filter(exp => {
+          if (!dateFilter['expenses.timestamp']) return true;
+          const ts = new Date(exp.timestamp);
+          return ts >= dateFilter['expenses.timestamp'].$gte && ts < dateFilter['expenses.timestamp'].$lt;
+        })
+        .map(exp => ({
+          ...exp.toObject(),
+          shiftId: shift._id,
+          staff: shift.staff,
+          startTime: shift.startTime,
+          endTime: shift.endTime,
+        }))
+    );
+
+    res.status(200).json({ count: allExpenses.length, expenses: allExpenses });
+
+  } catch (err) {
+    console.error('Error fetching expenses:', err);
+    res.status(500).json({ error: 'Failed to retrieve expenses' });
+  }
+});
+
 
 
 

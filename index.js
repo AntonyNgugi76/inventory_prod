@@ -33,6 +33,12 @@ app.use('/api', analyticsRoutes);
 const shiftRoutes = require('./src/routes/shiftRoutes');
 app.use('/api', shiftRoutes);
 
+const roomRoutes = require('./src/routes/roomRoutes');
+
+app.use('/api/rooms', roomRoutes);
+const bookingRoutes = require('./src/routes/bookingRoutes');
+app.use('/api/bookings', bookingRoutes);
+
 
 
 
