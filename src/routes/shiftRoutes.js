@@ -113,7 +113,6 @@ router.get('/check-shift', protect, async (req, res) => {
     res.status(500).json({ error: 'Failed to check shift.' });
   }
 });
-
 router.get('/sales-per-shift', protect, async (req, res) => {
   try {
     // Ensure only admins or managers can view all shifts
@@ -133,11 +132,12 @@ router.get('/sales-per-shift', protect, async (req, res) => {
           .populate('item', 'name price')
           .lean();
 
-        // Summarize items sold
         const itemsSold = [];
         let totalSales = 0;
 
         sales.forEach((sale) => {
+          if (!sale.item) return; // Skip if the item was deleted
+
           const existing = itemsSold.find(i => i.item._id.equals(sale.item._id));
           if (existing) {
             existing.quantitySold += sale.quantitySold;
@@ -153,6 +153,7 @@ router.get('/sales-per-shift', protect, async (req, res) => {
               totalAmount: sale.totalAmount
             });
           }
+
           totalSales += sale.totalAmount;
         });
 
@@ -176,6 +177,7 @@ router.get('/sales-per-shift', protect, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch sales per shift', details: err.message });
   }
 });
+
 router.get('/expenses', protect, async (req, res) => {
   try {
     const { filter } = req.query;
