@@ -66,5 +66,65 @@ router.get('/my-items', authenticate, async (req, res) => {
   }
 });
 
+// Get all item assignments for a specific staff (Admin only)
+router.get('/staff/:staffId/assignments', authenticate, authorizeAdmin, async (req, res) => {
+  const { staffId } = req.params;
+
+  try {
+    const staff = await User.findById(staffId);
+    if (!staff || staff.role !== 'staff') {
+      return res.status(400).json({ error: 'Invalid staff ID or not a staff member' });
+    }
+
+    const assignments = await ItemAssignment.find({ staff: staffId }).populate('item');
+
+    res.status(200).json(assignments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update quantityAssigned for an item assignment (Admin only)
+router.patch('/:assignmentId', authenticate, authorizeAdmin, async (req, res) => {
+  const { assignmentId } = req.params;
+  const { quantityAssigned } = req.body;
+
+  if (quantityAssigned == null || quantityAssigned < 0) {
+    return res.status(400).json({ error: 'Invalid quantity value' });
+  }
+
+  try {
+    const assignment = await ItemAssignment.findById(assignmentId).populate('item');
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    const item = assignment.item;
+    const oldQty = assignment.quantityAssigned;
+    const diff = quantityAssigned - oldQty;
+
+    if (diff > 0 && item.totalQuantity < diff) {
+      return res.status(400).json({ error: 'Not enough stock to increase quantity' });
+    }
+
+    // Update assignment and item stock
+    assignment.quantityAssigned = quantityAssigned;
+    item.totalQuantity -= diff;
+    await assignment.save();
+    await item.save();
+
+    res.status(200).json({
+      message: 'Assignment updated successfully',
+      oldQuantity: oldQty,
+      newQuantity: quantityAssigned,
+      itemRemaining: item.totalQuantity,
+      assignment,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 module.exports = router;
